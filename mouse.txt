@@ -1,0 +1,39 @@
+
+ "        - Print characters until next ", ! will act as cr/lf
+ 0-9      - push number, will built 16-bit number
+ A-Z      - push variable number (0-25)
+ a-z      - push variable number (0-25)
+ !        - Pop number from stack and print it
+ !'       - Pop number from stack and print as ASCII
+ +        - Addition
+ -        - Subtraction
+ *        - Multiplication
+ /        - Division
+ \        - Remainder
+ ?        - Input integer
+ ?'       - Input character
+ '        - Push next character to stack
+ (        - Begin loop
+ )        - End loop
+ .        - Retrieve variable value
+ :        - Store value into variable
+ =        - Push 1 if y=x else 0
+ <        - Push 1 if y<x else 0
+ >        - Push 1 if y>x else 0
+ ^        - Exit loop if false
+ [        - Start of conditional statement
+ |        - Else portion of conditional statement
+ ]        - End of conditional statement
+ $        - End program
+ {        - Enable tracing
+ }        - Disable tracing
+ ~        - Remark until end of line
+ #        - Begin macro call
+ ,        - End of macro parameter
+ ;        - End of macro call
+ $letter  - Define macro
+ %        - Retrieve macro parameter
+ @        - Return from macro
+
+Variables:
+  000-511 - A-Z=0-25
