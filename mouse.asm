@@ -73,19 +73,31 @@ good:      ldi     high fildes         ; get file descriptor
            call    o_msg               ; display it
            lbr     o_wrmboot           ; and return to os
 load:      mov     r7,program          ; where to place program
-loadlp:    mov     rc,128              ; read next 128 bytes
-           mov     rf,buffer           ; buffer to retrieve data
-           call    o_read              ; read the header
-           glo     rc                  ; check for zero bytes read
-           lbz     done                ; jump if so
-           mov     rf,buffer           ; buffer to retrieve data
-linelp:    glo     rc                  ; see if done with block
-           lbz     loadlp              ; read next block
-           dec     rc                  ; decrement count
-           lda     rf                  ; get next byte
-           str     r7                  ; store into program space
-           inc     r7
-           lbr     linelp              ; continue processing block
+
+           mov     rc,32767
+           mov     rf,program
+           call    o_read
+           glo     rc
+           adi     program.0
+           plo     r7
+           ghi     rc
+           adci    program.1
+           phi     r7
+
+;loadlp:    mov     rc,128              ; read next 128 bytes
+;           mov     rf,buffer           ; buffer to retrieve data
+;           call    o_read              ; read the header
+;           glo     rc                  ; check for zero bytes read
+;           lbz     done                ; jump if so
+;           mov     rf,buffer           ; buffer to retrieve data
+;linelp:    glo     rc                  ; see if done with block
+;           lbz     loadlp              ; read next block
+;           dec     rc                  ; decrement count
+;           lda     rf                  ; get next byte
+;           str     r7                  ; store into program space
+;           inc     r7
+;           lbr     linelp              ; continue processing block
+
 done:      ldi     '$'                 ; write end of program command
            str     r7
            inc     r7
@@ -128,8 +140,13 @@ mac_uc:    smi     'A'                 ; convert to numeric value
            lbr     macstr              ; and store macro address
 mdone:     mov     rf,himem            ; point to high memory pointer
            lda     rf                  ; retrieve it
-           phi     r8                  ; and set mouse stack
+           phi     r2                  ; and set machine stack
            ldn     rf
+           plo     r2
+           ghi     r2                  ; put mouse stack 1k lower than machine stack
+           smi     4
+           phi     r8
+           glo     r2
            plo     r8
            mov     ra,0                ; clear flags
            mov     r7,program          ; set program counter to start
@@ -153,65 +170,41 @@ go:        lda r7
            lbdf    cmd_lc
            call    is_uc               ; check for variable name
            lbdf    cmd_uc
-           smi     33                  ; check for ! command
-           lbz     cmd_ex
-           smi     1                   ; check for quote
-           lbz     cmd_qt              ; jump if so
-           smi     1                   ; check for # command
-           lbz     cmd_mc
-           smi     1                   ; check for $ command
-           lbz     o_wrmboot           ; return Elf/OS
-           smi     1                   ; check for % command
-           lbz     cmd_pr
-           smi     2                   ; check for '
-           lbz     cmd_tk              ; jump if so
-           smi     1                   ; check for ( command
-           lbz     runlp               ; no need to do anything
-           smi     1                   ; check for ) command
-           lbz     cmd_cp
-           smi     1                   ; check for * command
-           lbz     cmd_ml
-           smi     1                   ; check for + command
-           lbz     cmd_ad
-           smi     1                   ; check for , command
-           lbz     cmd_me
-           smi     1                   ; check for - command
-           lbz     cmd_sb
-           smi     1                   ; check for . command
-           lbz     cmd_gv
-           smi     1                   ; check for / command
-           lbz     cmd_dv
-           smi     11                  ; check for : command
-           lbz     cmd_sv
-           smi     1                   ; check for ; command
-           lbz     cmd_me
-           smi     1                   ; check for < command
-           lbz     cmd_lt
-           smi     1                   ; check for = command
-           lbz     cmd_eq
-           smi     1                   ; check for > command
-           lbz     cmd_gt
-           smi     1                   ; check for ? command
-           lbz     cmd_in
-           smi     1                   ; check for @ command
-           lbz     cmd_rt
-           smi     27                  ; check for [ command
-           lbz     cmd_sq
-           smi     1                   ; check for \ command
-           lbz     cmd_md              ; jump if so
-           smi     1                   ; check for ] command
-           lbz     runlp               ; no need to do anything
-           smi     1                   ; check for ^ command
-           lbz     cmd_el
-           smi     29                  ; check for { command
-           lbz     cmd_tron
-           smi     1                   ; check for | command
-           lbz     cmd_es
-           smi     1                   ; check for } command
-           lbz     cmd_troff
-           smi     1                   ; check for ~ command
-           lbz     cmd_rm
-           lbr     runlp               ; ignore unknown command
+
+           plo     re                  ; save copy of command
+           smi     123                 ; check for { through ~
+           lbnf    go1                 ; jump if not
+           adi     28                  ; set correct offset
+           lbr     gogo                ; and continue
+go1:       glo     re                  ; recover command
+           smi     91                  ; check for [ through `
+           lbnf    go2                 ; jump if not
+           adi     22                  ; set correct offset
+           lbr     gogo                ; and continue
+go2:       glo     re                  ; recover command
+           smi     58                  ; check for : through @
+           lbnf    go3                 ; jump if not
+           adi     15                  ; set correct offset
+           lbr     gogo                ; and continue
+go3:       glo     re                  ; recover command
+           smi     33                  ; check for ! through /
+           lbnf    runlp               ; jump if not
+gogo:      shl                         ; command addresses are 2 bytes
+           str     r2                  ; add to command table address
+           ldi     cmds.0
+           add
+           plo     rc
+           ldi     cmds.1
+           adci    0
+           phi     rc
+           mov     rf,jump             ; where to place the jump target
+           lda     rc                  ; retrieve command address
+           str     rf                  ; and store into jump target
+           inc     rf
+           ldn     rc
+           str     rf
+           db      0c0h                ; lbr
+jump:      dw      0
 
 cmd_sq:    inc     r8                  ; retrieve value from stack
            lda     r8
@@ -244,17 +237,7 @@ cmd_sq_el: glo     rc                  ; must be at 1 parens count
            lbz     runlp               ; back to main loop if so
            lbr     cmd_sq_lp           ; otherwise keep lookin
 
-cmd_ad:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
+cmd_ad:    call    getargs             ; get arguments
            glo     rd                  ; add the two numbers together
            str     r2
            glo     rc
@@ -285,17 +268,7 @@ cmd_cp_op: dec     rc                  ; decrement count
            lbz     runlp               ; jump if not nested
            lbr     cmd_cp_1            ; and keep looking
 
-cmd_dv:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
+cmd_dv:    call    getargs             ; get arguments
            call    div16               ; Perform division
            lbr     pushrc
 
@@ -335,17 +308,7 @@ cmd_es_lp: lda     r7                  ; get next byte from program
 cmd_es_op: inc     rc                  ; increment parens count
            lbr     cmd_es_lp           ; and keep looking
 
-cmd_eq:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
+cmd_eq:    call    getargs             ; get arguments
            glo     rd                  ; add the two numbers together
            str     r2
            glo     rc
@@ -363,17 +326,7 @@ cmd_eq:    sex     r8                  ; recover arguments
            lbz     logic_1
            lbr     logic_0
 
-cmd_lt:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
+cmd_lt:    call    getargs             ; get arguments
            glo     rd                  ; add the two numbers together
            str     r2
            glo     rc
@@ -394,17 +347,7 @@ cmd_lt:    sex     r8                  ; recover arguments
            lbdf    logic_1
            lbr     logic_0
 
-cmd_gt:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
+cmd_gt:    call    getargs             ; get arguments
            glo     rd                  ; add the two numbers together
            str     r2
            glo     rc
@@ -448,26 +391,27 @@ cmd_ex_c:  inc     r7                  ; move past tick mark
            call    o_type              ; and display it
            lbr     runlp               ; then back to loop
 
-cmd_gv:    mov     rc,variables        ; point to variable storage
-           inc     r8                  ; point to variable on stack
-           lda     r8
-           phi     rd
-           ldn     r8                  ; get variable number
-           shl                         ; 2 bytes per variable
-           plo     rd
-           ghi     rd
-           shlc
-           phi     rd
-           glo     rc                  ; rc += rd
-           str     r2
-           glo     rd
-           add
-           plo     rc
-           ghi     rc
-           str     r2
-           ghi     rd
-           adc
-           phi     rc
+;cmd_gv:    mov     rc,variables        ; point to variable storage
+;           inc     r8                  ; point to variable on stack
+;           lda     r8
+;           phi     rd
+;           ldn     r8                  ; get variable number
+;           shl                         ; 2 bytes per variable
+;           plo     rd
+;           ghi     rd
+;           shlc
+;           phi     rd
+;           glo     rc                  ; rc += rd
+;           str     r2
+;           glo     rd
+;           add
+;           plo     rc
+;           ghi     rc
+;           str     r2
+;           ghi     rd
+;           adc
+;           phi     rc
+cmd_gv:    call    varadr              ; get variable address
            lda     rc                  ; recover variable value
            phi     rf
            ldn     rc
@@ -508,17 +452,7 @@ cmd_md:    sex     r8                  ; recover arguments
            call    mod16               ; get remainder
            lbr     pushrc
 
-cmd_ml:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
+cmd_ml:    call    getargs             ; get arguments
            call    mul16               ; multiply numbers
 pushrc:    sex     r8                  ; push result to mouse stack
            glo     rc
@@ -560,18 +494,8 @@ cmd_rm:    lda     r7                  ; read next program byte
            lbnz    cmd_rm              ; keep looking until non-printable
            lbr     runlp               ; then back to main loop
 
-cmd_sb:    sex     r8                  ; recover arguments
-           irx
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rc
-           ldx
-           plo     rc
-           sex     r2                  ; point x back to machine stack
-           glo     rd                  ; add the two numbers together
+cmd_sb:    call    getargs             ; get arguments
+           glo     rd                  ; perform subtraction
            str     r2
            glo     rc
            sm
@@ -583,26 +507,28 @@ cmd_sb:    sex     r8                  ; recover arguments
            phi     rf
            lbr     push                ; push result
 
-cmd_sv:    mov     rc,variables        ; point to variable storage
-           inc     r8                  ; point to variable on stack
-           lda     r8
-           phi     rd
-           lda     r8                  ; get variable number
-           shl                         ; 2 bytes per variable
-           plo     rd
-           ghi     rd
-           shlc
-           phi     rd
-           glo     rc                  ; rc += rd
-           str     r2
-           glo     rd
-           add
-           plo     rc
-           ghi     rc
-           str     r2
-           ghi     rd
-           adc
-           phi     rc
+;cmd_sv:    mov     rc,variables        ; point to variable storage
+;           inc     r8                  ; point to variable on stack
+;           lda     r8
+;           phi     rd
+;           lda     r8                  ; get variable number
+;           shl                         ; 2 bytes per variable
+;           plo     rd
+;           ghi     rd
+;           shlc
+;           phi     rd
+;           glo     rc                  ; rc += rd
+;           str     r2
+;           glo     rd
+;           add
+;           plo     rc
+;           ghi     rc
+;           str     r2
+;           ghi     rd
+;           adc
+;           phi     rc
+cmd_sv:    call    varadr              ; get address of variable
+           inc     r8
            lda     r8                  ; get high byte from stack
            str     rc                  ; store into variable
            inc     rc
@@ -733,6 +659,40 @@ cmd_pr:    inc     r8                  ; retrieve parameter from mouse stack
            phi     r9
            lbr     runlp               ; and back to main loop
 
+getargs:   inc     r8                  ; recover arguments
+           lda     r8
+           phi     rd
+           lda     r8
+           plo     rd
+           lda     r8
+           phi     rc
+           ldn     r8
+           plo     rc
+           ret                         ; return to caller
+
+
+varadr:    mov     rc,variables        ; point to variable storage
+           inc     r8                  ; point to variable on stack
+           lda     r8
+           phi     rd
+           ldn     r8                  ; get variable number
+           shl                         ; 2 bytes per variable
+           plo     rd
+           ghi     rd
+           shlc
+           phi     rd
+           glo     rc                  ; rc += rd
+           str     r2
+           glo     rd
+           add
+           plo     rc
+           ghi     rc
+           str     r2
+           ghi     rd
+           adc
+           phi     rc
+           ret
+
 ; ************************************
 ; *** make both arguments positive ***
 ; *** Arg1 RC                      ***
@@ -835,8 +795,7 @@ div16:     call    mdnorm              ; normalize numbers
            lbnz    div16_1
            mov     rc,0                ; return 0 as div/0
            ret                         ; and return to caller
-div16_1:   push    rf                  ; save consumed registers
-           push    r9
+div16_1:   push    r9                  ; save consumed registers
            push    r8
            ldi     0                   ; clear answer
            phi     rf
@@ -877,7 +836,6 @@ divst:     glo     rd                  ; get low of divisor
 divret:    mov     rc,rf               ; move answer to rc
            pop     r8                  ; recover consumed registers
            pop     r9
-           pop     rf
            ret                         ; jump if done
 divgo:     mov     r9,rc               ; copy dividend
            glo     rd                  ; get lo of divisor
@@ -1062,8 +1020,7 @@ tobcdlp4:  lda     rd           ; get current cell
 ; ***** Output 16-bit integer                   *****
 ; ***** RF - 16-bit integer                     *****
 ; ***************************************************
-itoa:      push    rf           ; save consumed registers
-           push    r9
+itoa:      push    r9           ; save consumed registers
            push    r8
            push    r7
            glo     r2           ; make room on stack for buffer
@@ -1104,7 +1061,6 @@ itoa3:     dec     r8
            pop     r7
            pop     r8           ; recover consumed registers
            pop     r9
-           pop     rf
            ldi     0            ; terminate string
            str     rb
            ret                  ; return to caller
@@ -1169,6 +1125,38 @@ is_uc:     plo     re                  ; save original value
            lbdf    not_chr             ; jump if above range
            lbr     is_chr              ; otherwise mark in range
 
+cmds:      dw      cmd_ex
+           dw      cmd_qt
+           dw      cmd_mc
+           dw      o_wrmboot
+           dw      cmd_pr
+           dw      runlp
+           dw      cmd_tk
+           dw      runlp
+           dw      cmd_cp
+           dw      cmd_ml
+           dw      cmd_ad
+           dw      cmd_me
+           dw      cmd_sb
+           dw      cmd_gv
+           dw      cmd_dv
+           dw      cmd_sv
+           dw      cmd_me
+           dw      cmd_lt
+           dw      cmd_eq
+           dw      cmd_gt
+           dw      cmd_in
+           dw      cmd_rt
+           dw      cmd_sq
+           dw      cmd_md
+           dw      runlp
+           dw      cmd_el
+           dw      runlp
+           dw      runlp
+           dw      cmd_tron
+           dw      cmd_es
+           dw      cmd_troff
+           dw      cmd_rm
 
 
 errmsg:    db      'File not found',10,13,0
